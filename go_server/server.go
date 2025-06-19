@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -13,6 +14,7 @@ func CreateDatabase() {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("Database opened successfully")
 	defer db.Close()
 	_, err = db.Exec(
 		`CREATE TABLE IF NOT EXISTS users (
@@ -25,6 +27,8 @@ func CreateDatabase() {
 	if err != nil {
 		panic(err)
 	}
+
+	fmt.Println("Database opened successfully 2 ")
 
 	mockUsers := []struct {
 		name     string
