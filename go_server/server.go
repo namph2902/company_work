@@ -3,85 +3,165 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"log"
+	"fmt"
 	"net/http"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func CreateDatabase() (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", "./company.db")
+func GetUsers(w http.ResponseWriter, r *http.Request) {
+	db, err := sql.Open(("sqlite3"), "./data.db")
 	if err != nil {
-		return nil, err
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-
-	_, err = db.Exec(
-		`CREATE TABLE IF NOT EXISTS employees (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL,
-			position TEXT NOT NULL,
-			salary REAL NOT NULL
-		);`)
+	defer db.Close()
+	rows, err := db.Query("SELECT id, name, email, age FROM users")
 	if err != nil {
-		return nil, err
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+	defer rows.Close()
 
-	// Insert initial data if table is empty
-	row := db.QueryRow("SELECT COUNT(*) FROM employees")
-	var count int
-	if err := row.Scan(&count); err != nil {
-		return nil, err
+	type User struct {
+		ID       int    `json:"id"`
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Age      int    `json:"age"`
+		Password string `json:"password"`
 	}
-	if count == 0 {
-		_, err = db.Exec(
-			`INSERT INTO employees (name, position, salary) VALUES
-			('Alice', 'Developer', 60000),
-			('Bob', 'Manager', 80000),
-			('Charlie', 'Designer', 70000);`)
-		if err != nil {
-			return nil, err
+	var users []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Age); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
+		users = append(users, u)
 	}
-
-	return db, nil
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(users)
 }
-
-func main() {
-	db, err := CreateDatabase()
+func CreateUser(w http.ResponseWriter, r *http.Request) {
+	db, err := sql.Open("sqlite3", "./data.db")
 	if err != nil {
-		log.Fatalf("Failed to create database: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	defer db.Close()
 
-	http.HandleFunc("/employees", func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query("SELECT id, name, position, salary FROM employees")
-		if err != nil {
-			http.Error(w, "Database error", http.StatusInternalServerError)
-			return
-		}
-		defer rows.Close()
-
-		type Employee struct {
-			ID       int     `json:"id"`
-			Name     string  `json:"name"`
-			Position string  `json:"position"`
-			Salary   float64 `json:"salary"`
-		}
-		var employees []Employee
-		for rows.Next() {
-			var emp Employee
-			if err := rows.Scan(&emp.ID, &emp.Name, &emp.Position, &emp.Salary); err != nil {
-				http.Error(w, "Scan error", http.StatusInternalServerError)
-				return
-			}
-			employees = append(employees, emp)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(employees)
-	})
-
-	log.Println("Server is running on port 8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	type User struct {
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Age      int    `json:"age"`
+		Password string `json:"password"`
 	}
+
+	var user User
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	stmt, err := db.Prepare("INSERT INTO users(name, email, age, password) VALUES(?, ?, ?, ?)")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer stmt.Close()
+
+	res, err := stmt.Exec(user.Name, user.Email, user.Age, user.Password)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	id, _ := res.LastInsertId()
+	fmt.Fprintf(w, "User created with ID: %d", id)
+}
+
+func UpdateUser(w http.ResponseWriter, r *http.Request) {
+	db, err := sql.Open("sqlite3", "./data.db")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	type User struct {
+		ID       int    `json:"id"`
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Age      int    `json:"age"`
+		Password string `json:"password"`
+	}
+
+	var user User
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	stmt, err := db.Prepare("UPDATE users SET name=?, email=?, age=?, password=? WHERE id=?")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer stmt.Close()
+
+	res, err := stmt.Exec(user.Name, user.Email, user.Age, user.Password, user.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rowsAffected, _ := res.RowsAffected()
+	fmt.Fprintf(w, "User updated: %d rows affected", rowsAffected)
+}
+
+func DeleteUser(w http.ResponseWriter, r *http.Request) {
+	db, err := sql.Open("sqlite3", "./data.db")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	type User struct {
+		ID       int    `json:"id"`
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Age      int    `json:"age"`
+		Password string `json:"password"`
+	}
+
+	var user User
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	stmt, err := db.Prepare("DELETE users WHERE id=?")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer stmt.Close()
+
+	res, err := stmt.Exec(user.Name, user.Email, user.Age, user.Password, user.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rowsAffected, _ := res.RowsAffected()
+	fmt.Fprintf(w, "User updated: %d rows affected", rowsAffected)
+}
+
+func main() {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("server is running"))
+	})
+	http.HandleFunc("/api/users", GetUsers)
+	http.ListenAndServe(":8080", nil)
 }
