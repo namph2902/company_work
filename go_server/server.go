@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"regexp"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -82,6 +83,10 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if !isValidEmail(user.Email) {
+		http.Error(w, "invalid email format", http.StatusBadRequest)
+		return
+	}
 
 	id, _ := res.LastInsertId()
 	fmt.Fprintf(w, "User created with ID: %d", id)
@@ -122,6 +127,10 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if !isValidEmail(user.Email) {
+    http.Error(w, "invalid email format", http.StatusBadRequest)
+    return
+}
 
 	rowsAffected, _ := res.RowsAffected()
 	fmt.Fprintf(w, "User updated: %d rows affected", rowsAffected)
@@ -180,6 +189,11 @@ func PrintAllUsers() {
 		}
 		fmt.Printf("ID: %d, Name: %s, Email: %s, Age: %d, Password: %s\n", id, name, email, age, password)
 	}
+}
+
+func isValidEmail(email string) bool {
+	re := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	return re.MatchString(email)
 }
 
 func main() {
